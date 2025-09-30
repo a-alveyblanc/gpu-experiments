@@ -1,0 +1,37 @@
+CompileFlags:
+  CompilerPath: /opt/cuda/bin/nvcc
+  Add:
+    - --cuda-path=/opt/cuda
+    - --cuda-gpu-arch=sm_86
+    - -I/opt/cuda
+    - "-xcuda"
+    - "-ferror-limit=0"
+    - --std=c++17
+    - "-D__INTELLISENSE__"
+    - "-D__CLANGD__"
+    - "-DCUDA_12_0_SM86_FEATURES_SUPPORTED"
+    - "-DCUTLASS_ARCH_MMA_SM86_SUPPORTED=1"
+    - "-D_LIBCUDACXX_STD_VER=12"
+    - "-D__CUDACC_VER_MAJOR__=12"
+    - "-D__CUDACC_VER_MINOR__=3"
+    - "-D__CUDA_ARCH__=860"
+    - "-D__CUDA_ARCH_FEAT_SM86_ALL"
+    - "-Wno-invalid-constexpr"
+  Remove:
+    - "-Xfatbin*"
+    - "-gencode*"
+    - "--generate-code*"
+    - "-ccbin*"
+    - "--compiler-options*"
+    - "--expt-extended-lambda"
+    - "--expt-relaxed-constexpr"
+    - "-forward-unknown-to-host-compiler"
+    - "-Werror=cross-execution-space-call"
+Hover:
+  ShowAKA: No
+InlayHints:
+  Enabled: No
+Diagnostics:
+  Suppress:
+    - "variadic_device_fn"
+    - "attributes_not_allowed"
