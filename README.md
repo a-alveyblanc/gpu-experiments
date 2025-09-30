@@ -1,6 +1,6 @@
 # CUDA experiments
 
-Collection of CUDA experiements, kernel optimizations, and tensor framework
+Collection of CUDA experiments, kernel optimizations, and tensor framework
 ideas I've generated while doing my PhD.
 
 What this is:
