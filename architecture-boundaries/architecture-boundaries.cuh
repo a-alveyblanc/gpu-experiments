@@ -48,7 +48,7 @@ __global__ void test_sm_count(float *__restrict__ out, const int niters) {
     out[gid] = a + b;
 }
 
-void test_sm_count_driver() {
+void test_sm_count_driver(int niters) {
   const uint tbSize = 128;
   dim3 blockSize(tbSize); // make block size match warp size 
   const uint smemSize = 96 * 1024;
@@ -72,7 +72,7 @@ void test_sm_count_driver() {
         cudaFuncAttributeMaxDynamicSharedMemorySize, smemSize);
 
     cudaEventRecord(start);
-    test_sm_count<<<gridSize, blockSize, smemSize>>>(out_d, 10000);
+    test_sm_count<<<gridSize, blockSize, smemSize>>>(out_d, niters);
     cudaEventRecord(stop);
 
     CUDA_CHECK(cudaEventSynchronize(stop));
@@ -110,7 +110,7 @@ __global__ void test_warps_per_sm(uint64_t *__restrict__ out, int niters) {
     out[blockIdx.x] = (stop - start);  // store number of cycles
 }
 
-void test_warps_per_sm_driver() {
+void test_warps_per_sm_driver(int niters) {
   const uint smemSize = 96 * 1024;
 
   uint64_t *out_h = new uint64_t[1024];
@@ -133,7 +133,7 @@ void test_warps_per_sm_driver() {
         cudaFuncAttributeMaxDynamicSharedMemorySize, smemSize);
 
     cudaEventRecord(start);
-    test_warps_per_sm<<<gridSize, blockSize, smemSize>>>(out_d, 1000);
+    test_warps_per_sm<<<gridSize, blockSize, smemSize>>>(out_d, niters);
     cudaEventRecord(stop);
     CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(
@@ -239,7 +239,7 @@ __global__ void test_partitions_per_sm(float *result,
   }
 }
 
-void test_partitions_per_sm_driver() {
+void test_partitions_per_sm_driver(int niters) {
   uint64_t *out_h = new uint64_t[1024];
   uint64_t *out_d;
   CUDA_CHECK(cudaMalloc((void **)&out_d, sizeof(uint64_t) * 1024));
@@ -259,7 +259,7 @@ void test_partitions_per_sm_driver() {
     dim3 blockSize(tbSize);
 
     cudaEventRecord(start);
-    test_partitions_per_sm<<<gridSize, blockSize>>>(result_d, out_d, 1000);
+    test_partitions_per_sm<<<gridSize, blockSize>>>(result_d, out_d, niters);
     cudaEventRecord(stop);
     CUDA_CHECK(cudaEventSynchronize(stop));
     CUDA_CHECK(
@@ -278,6 +278,209 @@ void test_partitions_per_sm_driver() {
 }
 
 /*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+/*----------------------------------------------------------------------------*/
+/*-------------------------- BANK CONFLICTS ----------------------------------*/
+/*----------------------------------------------------------------------------*/
+
+__global__ void test_force_bank_conflicts(uint64_t *out, int niters) {
+  /* The purpose of this test is to access the same shared memory bank by all
+   * threads in a single warp so we can later compare to a kernel that has no
+   * bank conflicts. This will give us an idea of exactly how bad bank conflicts
+   * actually are.
+   *
+   * Shared memory is laid out in 32 banks, with each bank a 32-bit word. Data
+   * type therefore constrains the "best case scenario" for bank conflicts.
+   * Indeed, the best case is using floats because we can cleanly map a single
+   * address to a single bank.
+   *
+   * For FP64, we are guaranteed 2-way conflicts because each piece of data will
+   * span two banks. We have a few options for how to avoid bank conflicts in
+   * this case, but we'll explore those later. For completeness, I'll state them
+   * without explanation.
+   *    1. We can do 2-stage loading where only 16 lanes in a warp are allowed
+   *    to load, then the other 16 OR 16 lanes load and broadcast to the other
+   *    16 lanes.
+   *
+   *    2. We can split the low and high 32-bits of the floats so they are
+   *    stored in different arrays. When loading, each thread does 2 loads from
+   *    each array and reconstructs the floats on-the-fly.
+   *
+   *    3. We can swizzle to break the conflict pattern. This is likely the
+   *    least costly, but more confusing, way to do this.
+   *
+   *    4. Avoid shared altogether, but depending on the application this might
+   *    result in very high register pressure.
+   *
+   * For FP16, it may seem like we're in just as bad of a position as FP64.
+   * However, we can vectorize the loads so that each thread all data in a
+   * single bank, alleviating all conflicts.
+   *
+   * The same line of thinking applies to all data types with size < FP16 size.
+   *
+   * To reiterate, this test will only be looking at an all-way bank conflict
+   * for a single bank.
+   */
+  int lane = threadIdx.x; // {0, 1, 2, ..., 31}
+
+  __shared__ float smem[32 * 32]; // need more than one entry per bank
+
+  float *ptr = &smem[lane * 32]; // access with a stride of 32
+  uint32_t addr =
+      static_cast<uint32_t>(__cvta_generic_to_shared(&smem[lane * 32]));
+  // can also do
+  // int addr = (int) &smem[warp][lane] & OxFFFF
+  float val;
+  uint64_t start, stop;
+  __syncthreads(); // align threads
+
+  start = clock64();
+
+#pragma unroll 1
+  for (int i = 0; i < niters; ++i) // volatile disables compiler optimizations
+    asm volatile ("ld.volatile.shared.f32 %0, [%1];"
+        : "=f"(val)
+        : "r"(addr));
+  stop = clock64();
+
+  // WARNING: only checking warp 0, could make this a bit more precise by
+  // measuring cycles for all warps then averaging
+  if (!lane) out[0] = stop - start;
+}
+
+void test_force_bank_conflicts_driver(int niters) {
+  dim3 blockDim(32); // launch a single warp 
+  dim3 gridDim(1);
+
+  uint64_t *out_h = (uint64_t *)malloc(sizeof(uint64_t));
+  uint64_t *out_d;
+
+  CUDA_CHECK(cudaMalloc((void **)&out_d, sizeof(uint64_t)));
+  test_force_bank_conflicts<<<gridDim, blockDim>>>(out_d, niters);
+  CUDA_CHECK(cudaGetLastError());
+  CUDA_CHECK(
+      cudaMemcpy(out_h, out_d, sizeof(uint64_t), cudaMemcpyDeviceToHost));
+
+  double cycles_per_iter = (double) out_h[0] / niters;
+  fprintf(stderr, "Conflict kernel took %.4f cycles/iteration\n",
+          cycles_per_iter);
+  free(out_h);
+  cudaFree(out_d);
+}
+
+__global__ void test_no_bank_conflicts(uint64_t *out, int niters) {
+  /* See `test_force_bank_conflicts`. Avoiding bank conflicts is somewhat of an
+   * art, re: swizzling. There are many different swizzling patterns, and we
+   * will eventually explore them all. Here, we don't do anything fancy. We
+   * simply map each lane to its corresponding memory bank. 
+   *
+   * Other ways this test can be constructed:
+   *    1. Map all lanes to a single shared memory bank
+   *    2. Map all lanes to a distinct, random shared memory bank
+   * Both cases should yield the same results as this test (verify this!)
+   */
+
+  int lane = threadIdx.x; // {0, 1, 2, ..., 31}
+
+  __shared__ float smem[32 * 32];
+  uint32_t addr =
+      static_cast<uint32_t>(__cvta_generic_to_shared(&smem[lane]));
+  // can also do
+  // int addr = (int) &smem[warp][lane] & OxFFFF
+  float val;
+  uint64_t start, stop;
+  __syncthreads();  // align threads
+
+  start = clock64();
+
+#pragma unroll 1
+  for (int i = 0; i < niters; ++i) // volatile disables compiler optimizations 
+    asm volatile ("ld.volatile.shared.f32 %0, [%1];"
+                  : "=f"(val)
+                  : "r"(addr));
+  stop = clock64();
+
+  // WARNING: only checking warp 0, could make this a bit more precise by
+  // measuring cycles for all warps then averaging
+  if (!lane) out[0] = stop - start;
+}
+
+void test_no_bank_conflicts_driver(int niters) {
+  dim3 blockDim(32); // launch a single warp 
+  dim3 gridDim(1);
+
+  uint64_t *out_h = (uint64_t *)malloc(sizeof(uint64_t));
+  uint64_t *out_d;
+
+  CUDA_CHECK(cudaMalloc((void **)&out_d, sizeof(uint64_t)));
+  test_no_bank_conflicts<<<gridDim, blockDim>>>(out_d, niters);
+  CUDA_CHECK(cudaGetLastError());
+  CUDA_CHECK(
+      cudaMemcpy(out_h, out_d, sizeof(uint64_t), cudaMemcpyDeviceToHost));
+
+  double cycles_per_iter = (double) out_h[0] / niters;
+  fprintf(stderr, "No conflict kernel took %.4f cycles/iteration\n",
+          cycles_per_iter);
+  free(out_h);
+  cudaFree(out_d);
+}
+
+__global__ void test_multicast_no_conflicts(uint64_t *out, int niters) {
+  /* Multicasts occur when multiple threads of the same warp access the same
+   * shared memory address. One thread loads from the common address and
+   * broadcasts the data to all other threads in the same warp. Best case
+   * scenario is the one illustrated below, i.e. all threads in a warp access
+   * the exact same address. This should be at parity with the no conflict case
+   * (maybe with a few extra cycles for the broadcast, but nothing major)
+   */
+  int lane = threadIdx.x; // {0, 1, 2, ..., 31}
+
+  __shared__ float smem[32 * 32];
+  // access the first bank by all threads in a warp
+  uint32_t addr =
+      static_cast<uint32_t>(__cvta_generic_to_shared(&smem[0]));
+
+  float val;
+  uint64_t start, stop;
+  __syncthreads(); // align threads
+
+  start = clock64();
+#pragma unroll 1
+  for (int i = 0; i < niters; ++i)
+    asm volatile ("ld.volatile.shared.f32 %0, [%1];"
+                  : "=f"(val)
+                  : "r"(addr));
+  stop = clock64();
+
+  // WARNING: only checking warp 0, could make this a bit more precise by
+  // measuring cycles for all warps then averaging
+  if (!lane) out[0] = stop - start;
+}
+
+void test_multicast_no_conflicts_driver(int niters) {
+  dim3 blockDim(32);
+  dim3 gridDim(1);
+
+  uint64_t *out_h = (uint64_t*) malloc(sizeof(uint64_t));
+  uint64_t *out_d;
+
+  CUDA_CHECK(cudaMalloc((void **) &out_d, sizeof(uint64_t)));
+  test_multicast_no_conflicts<<<gridDim, blockDim>>>(out_d, niters);
+  CUDA_CHECK(cudaGetLastError());
+
+  CUDA_CHECK(
+      cudaMemcpy(out_h, out_d, sizeof(uint64_t), cudaMemcpyDeviceToHost));
+
+  double cycles_per_iter = (double) out_h[0] / niters;
+  printf("Multicast kernel took %.4f cycles/iteration\n",
+      cycles_per_iter);
+  free(out_h);
+  cudaFree(out_d);
+}
+
+/*---------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 /*----------------------------------------------------------------------------*/
 

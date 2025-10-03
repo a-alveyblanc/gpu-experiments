@@ -52,7 +52,7 @@ __global__ void shared_memory_tiling(const float *A, const float *B, float *C,
   C += i * BM * n + j * BN; // select output tile
 
   __shared__ float As[BK * BK];
-  __shared__ float Bs[BK * BK + 1];
+  __shared__ float Bs[BK * BK];
 
   // tile indices
   int ii = threadIdx.y;
@@ -81,6 +81,42 @@ __global__ void shared_memory_tiling(const float *A, const float *B, float *C,
   C[ii * n + ij] = acc;
 }
 
+template <int BM, int BN, int BK>
+__global__ void
+shared_memory_tiling_avoid_bank_conflicts(const float *A, const float *B,
+                                          float *C, const int n) {
+  int i = blockIdx.y;
+  int j = blockIdx.x;
+
+  __shared__ float As[BM * BK];
+  __shared__ float Bs[BK * (BN + 1)];
+
+  A += i * BM * n;
+  B += j * BN;
+  C += i * BM * n + j * BN;
+
+  int ii = threadIdx.y;
+  int ij = threadIdx.x;
+  int Bs_stride = BN + 1;  // avoid bank conflicts
+
+  float acc = 0.0f;
+  for (int _ = 0; _ < n; _ += BK) {
+    // fetch into shared, avoiding conflicts
+    As[ii * BK + ij] = A[ii * n + ij];
+    Bs[ii * Bs_stride + ij] = B[ii * n + ij];
+    __syncthreads();
+
+    A += BK;
+    B += BK * n;
+
+    for (int k = 0; k < BK; ++k)
+      acc += As[ii * BK + k] * Bs[k * Bs_stride + ij];
+    __syncthreads();
+  }
+
+  C[ii * n + ij] = acc;
+}
+
 template<int BM, int BN, int BK, int TM>
 __global__
 void thread_block_1d(const float *A, const float *B, float *C, const int n) {
@@ -88,7 +124,7 @@ void thread_block_1d(const float *A, const float *B, float *C, const int n) {
   int j = blockIdx.x;
 
   __shared__ float As[BM * BK];
-  __shared__ float Bs[BK * BN + 1];
+  __shared__ float Bs[BK * BN];
 
   A += i * BM * n;
   B += j * BN;
