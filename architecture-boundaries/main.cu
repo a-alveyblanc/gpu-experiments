@@ -79,6 +79,7 @@ int main(int argc, char** argv) {
   if (!niters_set) niters = 100'000;
   if (!benchmarks.size()) {
     fprintf(stderr, "Did not find any benchmarks to run, defaulting to `all`\n");
+    benchmarks.push_back(std::string("all"));
   }
 
   fprintf(stderr, "Number of iterations: %d\n", niters);
