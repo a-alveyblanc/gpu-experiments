@@ -315,8 +315,8 @@ __global__ void test_force_bank_conflicts(uint64_t *out, int niters) {
    *    result in very high register pressure.
    *
    * For FP16, it may seem like we're in just as bad of a position as FP64.
-   * However, we can vectorize the loads so that each thread all data in a
-   * single bank, alleviating all conflicts.
+   * However, we can vectorize the loads so that each thread accesses all data
+   * in a single bank, alleviating all conflicts.
    *
    * The same line of thinking applies to all data types with size < FP16 size.
    *
@@ -345,8 +345,6 @@ __global__ void test_force_bank_conflicts(uint64_t *out, int niters) {
         : "r"(addr));
   stop = clock64();
 
-  // WARNING: only checking warp 0, could make this a bit more precise by
-  // measuring cycles for all warps then averaging
   if (!lane) out[0] = stop - start;
 }
 
@@ -402,8 +400,6 @@ __global__ void test_no_bank_conflicts(uint64_t *out, int niters) {
                   : "r"(addr));
   stop = clock64();
 
-  // WARNING: only checking warp 0, could make this a bit more precise by
-  // measuring cycles for all warps then averaging
   if (!lane) out[0] = stop - start;
 }
 
@@ -454,8 +450,6 @@ __global__ void test_multicast_no_conflicts(uint64_t *out, int niters) {
                   : "r"(addr));
   stop = clock64();
 
-  // WARNING: only checking warp 0, could make this a bit more precise by
-  // measuring cycles for all warps then averaging
   if (!lane) out[0] = stop - start;
 }
 
