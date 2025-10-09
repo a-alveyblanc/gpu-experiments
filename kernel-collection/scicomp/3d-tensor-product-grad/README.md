@@ -86,7 +86,6 @@ Passed
 ## Final kernel summary statistics from Nsight
 ![Summary statistics](./nsight-register-tiled-explicit-unroll.png "Final kernel
 summary statistics")
-- Pointer in screenshot :) 
 
 ## TODO / stuff for later
 - Final push would be to entirely eliminate shared memory bank conflicts
