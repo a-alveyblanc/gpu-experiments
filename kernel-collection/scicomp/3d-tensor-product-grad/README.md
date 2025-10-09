@@ -8,21 +8,22 @@ is probably where we'd expect to sit.
 The contraction we carry out is applying an operator of shape $(n, n)$ to each
 spatial axis to do things like differentiate, interpolate, etc. For example,
 differentiation looks something like
-$$
-\partial_x u^e_{ijk} = \sum_{\ell} A_{i\ell} u^e_{\ell  jk}\\
-\partial_y u^e_{ijk} = \sum_{\ell} A_{j\ell} u^e_{i\ell  k}\\
-\partial_z u^e_{ijk} = \sum_{\ell} A_{k\ell} u^e_{ij\ell k}\\
-$$
+
+$\partial_x u^e_{ijk} = \sum_{\ell} A_{i\ell} u^e_{\ell  jk}$
+
+$\partial_y u^e_{ijk} = \sum_{\ell} A_{j\ell} u^e_{i\ell  k}$
+
+$\partial_z u^e_{ijk} = \sum_{\ell} A_{k\ell} u^e_{ij\ell k}$
 
 Hence, we need $O(n^3)$ entries and perform $O(n^4)$ FLOPs per contraction. The
 higher order our discretization, the larger $n$ will be. Since the number of
 elements scales both the total number of entries and total number of FLOPs, it
 suffices to look at the arithmetic intensity of the contraction within a single
 element. Assuming we only need to load data necessary for a computation once,
-$$
+$
 \frac{n^4 \text{FLOPs}}{b \cdot n^3 \text{bytes}} = \frac{n\text{FLOP}}{b
 \text{byte}}. 
-$$
+$
 
 So, in general, our arithmetic intensity is $\frac{n}{b}$. This is the same as
 matrix multiplication, but unfortunately we are not so lucky that our $n$ is as
