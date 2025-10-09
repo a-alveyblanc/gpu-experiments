@@ -1,21 +1,17 @@
 CompileFlags:
-  CompilerPath: /opt/cuda/bin/nvcc
+  Compiler: /opt/cuda/bin/nvcc
   Add:
-    - --cuda-path=/opt/cuda
+    - --cuda-path=/opt/cuda/
     - --cuda-gpu-arch=sm_86
-    - -I/opt/cuda
+    - -I/home/aj/tools/cutlass/include/
+    - -I/home/aj/tools/cutlass/tools/util/include/
+    - -I/home/aj/tools/cutlass/cutlass/examples/common/
+    - -I/opt/cuda/targets/x86_64-linux/include/cccl/
+    - -I/usr/include/
     - "-xcuda"
     - "-ferror-limit=0"
     - --std=c++17
-    - "-D__INTELLISENSE__"
-    - "-D__CLANGD__"
-    - "-DCUDA_12_0_SM86_FEATURES_SUPPORTED"
-    - "-DCUTLASS_ARCH_MMA_SM86_SUPPORTED=1"
-    - "-D_LIBCUDACXX_STD_VER=12"
-    - "-D__CUDACC_VER_MAJOR__=12"
-    - "-D__CUDACC_VER_MINOR__=3"
     - "-D__CUDA_ARCH__=860"
-    - "-D__CUDA_ARCH_FEAT_SM86_ALL"
     - "-Wno-invalid-constexpr"
   Remove:
     - "-Xfatbin*"
