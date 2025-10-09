@@ -20,10 +20,9 @@ higher order our discretization, the larger $n$ will be. Since the number of
 elements scales both the total number of entries and total number of FLOPs, it
 suffices to look at the arithmetic intensity of the contraction within a single
 element. Assuming we only need to load data necessary for a computation once,
-$
-\frac{n^4 \text{FLOPs}}{b \cdot n^3 \text{bytes}} = \frac{n\text{FLOP}}{b
-\text{byte}}. 
-$
+
+$\frac{n^4 \text{FLOPs}}{b \cdot n^3 \text{bytes}} = \frac{n\text{FLOP}}{b
+\text{byte}}$
 
 So, in general, our arithmetic intensity is $\frac{n}{b}$. This is the same as
 matrix multiplication, but unfortunately we are not so lucky that our $n$ is as
@@ -87,6 +86,7 @@ Passed
 ## Final kernel summary statistics from Nsight
 ![Summary statistics](./nsight-register-tiled-explicit-unroll.png "Final kernel
 summary statistics")
+- Pointer in screenshot :) 
 
 ## TODO / stuff for later
 - Final push would be to entirely eliminate shared memory bank conflicts
