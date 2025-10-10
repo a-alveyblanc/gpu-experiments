@@ -9,9 +9,9 @@ template<> __constant__ float op_const<float>[MAX_N * MAX_N];
 #include "utils.cuh"
 
 int main(int argc, const char **argv) {
-  int niterations = 1;
+  int niterations = 20;
   int dim = 3;
-  int nelts = 100000;
+  int nelts = 82000;
   int n = 8;
   using FP_T = float;
 
@@ -71,14 +71,6 @@ int main(int argc, const char **argv) {
   }
   fprintf(stderr, "%s", grad == ref_grad ? "Passed\n" : "Failed\n");
 
-  driver_result = register_tiled_multiple_elements_per_block_driver(
-      op, u, grad, nelts, n, dim, niterations);
-  if (driver_result != cudaSuccess) {
-    fprintf(stderr, "Driver failed: %s\n", cudaGetErrorString(driver_result));
-    return -1;
-  }
-  fprintf(stderr, "%s", grad == ref_grad ? "Passed\n" : "Failed\n");
-
   if (n == 8) {
     driver_result = register_tiled_explicit_unroll_driver(op, u, grad, nelts, n,
                                                           dim, niterations);
@@ -88,6 +80,16 @@ int main(int argc, const char **argv) {
     }
     fprintf(stderr, "%s", grad == ref_grad ? "Passed\n" : "Failed\n");
   }
+
+  // if (n == 8) {
+  //   driver_result = persistent_register_tiled_explicit_unroll_driver(
+  //       op, u, grad, nelts, n, dim, niterations);
+  //   if (driver_result != cudaSuccess) {
+  //     fprintf(stderr, "Driver failed: %s\n", cudaGetErrorString(driver_result));
+  //     return -1;
+  //   }
+  //   fprintf(stderr, "%s", grad == ref_grad ? "Passed\n" : "Failed\n");
+  // }
 
   return 0;
 }

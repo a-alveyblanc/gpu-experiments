@@ -1,17 +1,24 @@
-#ifndef _3D_GRADIENT_UTILS_CUH
-#define _3D_GRADIENT_UTILS_CUH
+#ifndef _GPUTILS_RANKEDTENSOR_H
+#define _GPUTILS_RANKEDTENSOR_H
 
 #include <vector>
+#include <cmath>
+#include <cstdlib>
 #include <stdio.h>
 
+// TODO: 
+// 1. add reporting for equality checking
+// 2. add default stride pattern
+// 3. move away from raw pointers for data
+// 4. other clean-ups
 template <class FP_T>
 struct RankedTensor {
   FP_T *host_view;
   FP_T *device_view;
   
-  unsigned int num_entries = 1;
-  unsigned int rank;
-  unsigned long long num_bytes = 0;
+  size_t num_entries = 1;
+  size_t rank;
+  size_t num_bytes = 0;
 
   std::vector<int> shape;
   std::vector<int> stride;
@@ -32,6 +39,11 @@ struct RankedTensor {
     if (last_error != cudaSuccess)
       fprintf(stderr, "cudaMalloc failed on RankedTensor creation: %s\n",
               cudaGetErrorString(last_error));
+  }
+
+  ~RankedTensor() {
+    delete[] host_view;
+    cudaFree(device_view);
   }
 
   void sync_device() {
@@ -61,6 +73,14 @@ struct RankedTensor {
     sync_device();
   }
 
+  FP_T operator()(std::vector<int> indices) {
+    size_t idx = 0;
+    for (int i = 0; i < shape.size(); ++i) {
+      idx += (shape[i]*stride[i]);
+    }
+    return host_view[idx];
+  }
+
   bool operator==(RankedTensor<FP_T> other) {
     other.sync_host();
     sync_host();
@@ -78,34 +98,6 @@ struct RankedTensor {
       }
 
     return true;
-  }
-};
-
-struct Benchmark {
-  int niterations;
-  double total_runtime_ms;
-  unsigned long long nflops;
-  unsigned long long nbytes;
-
-  Benchmark(int niterations, double ms, unsigned long long nflops,
-            unsigned long long nbytes)
-      : niterations(niterations), total_runtime_ms(ms), nflops(nflops),
-        nbytes(nbytes) {}
-
-  double gflops() {
-    double ms_per_iter = total_runtime_ms / niterations;
-    double s_per_iter = 1e-3 * ms_per_iter;
-    double gflop_count = 2.0 * (double)nflops * (double)1e-9;
-
-    return gflop_count / s_per_iter;
-  }
-
-  double gb_per_sec() {
-    double ms_per_iter = total_runtime_ms / niterations;
-    double s_per_iter = 1e-3 * ms_per_iter;
-    double gbytes = 1e-9 * (double) nbytes;
-
-    return gbytes / s_per_iter;
   }
 };
 

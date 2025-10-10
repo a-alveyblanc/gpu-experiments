@@ -4,3 +4,5 @@ cutlass-env.sh
 .clangd
 
 learning-cute/
+random-scripts/
+gpu-utils/

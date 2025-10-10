@@ -112,7 +112,7 @@ shared_no_bank_conflicts(const FP_T *__restrict__ A, const FP_T *__restrict__ u,
 }
 
 template <class FP_T>
-__global__ void register_tiled_k(const FP_T *__restrict__ A,
+__global__ __launch_bounds__(64, 1) void register_tiled_k(const FP_T *__restrict__ A,
                                  const FP_T *__restrict__ u,
                                  FP_T *__restrict__ grad, const int nelts,
                                  const int ndofs_1d, const int dim) {
@@ -241,7 +241,7 @@ __global__ void register_tiled_k_multiple_elements_per_block(
 }
 
 template <class FP_T>
-__global__ void
+__global__ void __launch_bounds__(64, 1)
 register_tiled_explicit_unroll(const FP_T *__restrict__ A,
                                const FP_T *__restrict__ u,
                                FP_T *__restrict__ grad, const int nelts,
@@ -307,6 +307,39 @@ register_tiled_explicit_unroll(const FP_T *__restrict__ A,
 #pragma unroll
   for (int k = 0; k < ndofs_1d; ++k)
     grad[IDX5(2, e, i, j, k)] = regK[k];
+}
+
+__device__ __forceinline__
+void cp_async_16B(void *dst, const void *src) {
+  unsigned smem_addr = static_cast<unsigned>(__cvta_generic_to_shared(dst));
+  asm volatile(
+      "cp.async.ca.shared.global [%0], [%1], 16;\n" ::
+      "r"(smem_addr), "l"(src)
+  );
+}
+
+__device__ __forceinline__
+void cp_async_commit() {
+  asm volatile("cp.async.commit_group;\n");
+}
+
+__device__ __forceinline__
+void cp_async_wait_all() {
+  asm volatile("cp.async.wait_group 0;\n");
+}
+
+template <class FP_T>
+__global__ void
+persistent_register_tiled_explicit_unroll(
+    const FP_T *__restrict__ A, 
+    const FP_T *__restrict__ u,
+    FP_T *__restrict__ grad, 
+    const int nelts, const int ndofs_1d, const int dim, 
+    const int nelts_per_block) {
+  /*
+   * Implement persistent kernel (1 block / SM) + pipelining to try and push
+   * performance much higher
+   */
 }
 
 #endif

@@ -3,13 +3,12 @@
 
 #include <stdio.h>
 
-typedef struct Matrix {
+struct Matrix {
   float *data_host;
   float *data_device;
-
   int n;
   int m;
-} Matrix;
+};
 
 void cuda_error_check(cudaError_t err) {
   if (err != cudaSuccess) {
