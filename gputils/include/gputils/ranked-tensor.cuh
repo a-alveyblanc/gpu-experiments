@@ -1,3 +1,7 @@
+/* Rough "dual view" tensor type for quickly allocating and filling matrices for
+ * development
+*/
+
 #ifndef _GPUTILS_RANKEDTENSOR_H
 #define _GPUTILS_RANKEDTENSOR_H
 

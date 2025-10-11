@@ -1,5 +1,5 @@
-#include "../headers/benchmark.cuh"
-#include "../headers/ranked-tensor.cuh"
+#include "../include/gputils/benchmark.cuh"
+#include "../include/gputils/ranked-tensor.cuh"
 #include <cmath>
 
 __global__ void matmul(const float *__restrict__ A, const float *__restrict__ B,

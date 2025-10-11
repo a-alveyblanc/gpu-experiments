@@ -1,3 +1,7 @@
+/* Useful for a quicker feedback loop than what Nsight would provide when
+ * implementing new optimizations.
+ */
+
 #ifndef _GPUTILS_BENCHMARK_H
 #define _GPUTILS_BENCHMARK_H
 
