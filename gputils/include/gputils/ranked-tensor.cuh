@@ -6,6 +6,7 @@
 #define _GPUTILS_RANKEDTENSOR_H
 
 #include <vector>
+#include <string>
 #include <cmath>
 #include <cstdlib>
 #include <stdio.h>
@@ -17,15 +18,17 @@
 // 4. other clean-ups
 template <class FP_T>
 struct RankedTensor {
-  FP_T *host_view;
-  FP_T *device_view;
+  FP_T *host_view = nullptr;
+  FP_T *device_view = nullptr;
   
   size_t num_entries = 1;
-  size_t rank;
+  size_t rank = 0;
   size_t num_bytes = 0;
 
   std::vector<int> shape;
   std::vector<int> stride;
+
+  std::string name = "";
 
   cudaError_t last_error = cudaSuccess;
 
@@ -45,9 +48,14 @@ struct RankedTensor {
               cudaGetErrorString(last_error));
   }
 
+  RankedTensor(const char* name, std::vector<int> shape, std::vector<int> stride) :
+    RankedTensor(shape, stride) {
+      this->name = std::string(name);
+    }
+
   ~RankedTensor() {
     delete[] host_view;
-    cudaFree(device_view);
+    if (device_view) cudaFree(device_view);
   }
 
   void sync_device() {
@@ -85,9 +93,9 @@ struct RankedTensor {
     return host_view[idx];
   }
 
-  bool operator==(RankedTensor<FP_T> other) {
+  bool operator==(RankedTensor<FP_T> &other) {
     other.sync_host();
-    sync_host();
+    this->sync_host();
 
     FP_T tolerance = 1e-7;
     if (other.num_entries != num_entries) return false;

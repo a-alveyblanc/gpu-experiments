@@ -95,6 +95,10 @@ struct Benchmark {
     fprintf(stderr, "\n");
   }
 
+  void csv(const char* filename) {
+    // TODO:
+  }
+
   cudaError_t run(dim3 grid_dim, dim3 block_dim, size_t smem_bytes,
                   bool warmup = true) {
     if (!kernel || !args) {

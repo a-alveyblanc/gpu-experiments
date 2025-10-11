@@ -191,56 +191,6 @@ __global__ void register_tiled_const_A(const FP_T *__restrict__ u,
 }
 
 template <class FP_T>
-__global__ void register_tiled_k_multiple_elements_per_block(
-    const FP_T *__restrict__ A, const FP_T *__restrict__ u,
-    FP_T *__restrict__ grad, const int nelts, const int ndofs_1d,
-    const int dim, const int elt_per_block) {
-  uint e = blockIdx.x * elt_per_block + threadIdx.z;
-
-  if (e >= (uint)nelts) return;
-
-  uint i = threadIdx.x;
-  uint j = threadIdx.y;
-
-  extern __shared__ FP_T smem[];
-  FP_T *As = smem;
-  
-  // each element processed per block needs to have its own slice in SMEM
-  FP_T *us_base = smem + ndofs_1d*ndofs_1d;
-  FP_T *us = us_base + threadIdx.z*ndofs_1d*(ndofs_1d + 1);
-  uint u_stride = ndofs_1d + 1;
-
-  As[IDX2(i, j)] = A[IDX2(i, j)];
-
-  constexpr uint MAX_REG = 8;
-  FP_T regK[MAX_REG] = {(FP_T)0.0};
-  for (int k = 0; k < MAX_REG; ++k) {
-      FP_T acc_x = (FP_T) 0.0;
-      FP_T acc_y = (FP_T) 0.0;
-      FP_T uij_tmp = u[IDX4(e, i, j, k)];
-
-      us[IDX2_padded(i, j, u_stride)] = u[IDX4(e, i, j, k)];
-      __syncthreads();
-
-#pragma unroll
-      for (int l = 0; l < MAX_REG; ++l) {
-        acc_x   += As[IDX2(i, l)] * us[IDX2_padded(l, j, u_stride)];
-        acc_y   += As[IDX2(j, l)] * us[IDX2_padded(i, l, u_stride)];
-        regK[l] += As[IDX2(l, k)] * uij_tmp; // k constant for entire loop
-      }
-      
-      grad[IDX5(0, e, i, j, k)] = acc_x;
-      grad[IDX5(1, e, i, j, k)] = acc_y;
-  }
-  __syncthreads();
-
-#pragma unroll
-  for (int k = 0; k < MAX_REG; ++k) {
-    grad[IDX5(2, e, i, j, k)] = regK[k];
-  }
-}
-
-template <class FP_T>
 __global__ void __launch_bounds__(64, 1)
 register_tiled_explicit_unroll(const FP_T *__restrict__ A,
                                const FP_T *__restrict__ u,

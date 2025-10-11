@@ -1,332 +1,79 @@
 #ifndef _3D_GRADIENT_DRIVERS_CUH
 #define _3D_GRADIENT_DRIVERS_CUH
 
-#include "utils.cuh"
-#include "kernels.cuh"
-#include "constants.cuh"
+#include "../../../gputils/include/gputils/ranked-tensor.cuh"
+#include "../../../gputils/include/gputils/benchmark.cuh"
 
 template <class FP_T>
-cudaError_t naive_driver(RankedTensor<FP_T> A, RankedTensor<FP_T> u,
-                         RankedTensor<FP_T> grad, const int nelts,
-                         const int ndofs_1d, const int dim, int niterations) {
-  dim3 gridDim(nelts);
-  dim3 blockDim(ndofs_1d, ndofs_1d, ndofs_1d);
+cudaError_t driver(const char *name, void *kernel, dim3 gridDim, dim3 blockDim,
+                   size_t smem_bytes, RankedTensor<FP_T> &A,
+                   RankedTensor<FP_T> &u, RankedTensor<FP_T> &grad,
+                   const int nelts, const int ndofs_1d, const int dim,
+                   int niterations) {
+  unsigned long long nflops =
+      2 * nelts * ndofs_1d * ndofs_1d * ndofs_1d * ndofs_1d;
+  unsigned long long nbytes =
+      sizeof(FP_T) *
+      (nelts * ndofs_1d * ndofs_1d * ndofs_1d + ndofs_1d * ndofs_1d);
 
-  naive_kernel<<<gridDim, blockDim>>>(A.device_view, u.device_view,
-                                      grad.device_view, nelts, ndofs_1d, dim);
+  void *args[] = {(void *)&A.device_view,    (void *)&u.device_view,
+                  (void *)&grad.device_view, (void *)&nelts,
+                  (void *)&ndofs_1d,         (void *)&dim};
 
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
+  Benchmark b(name, kernel, args, nbytes, nflops, niterations);
 
-  cudaEventRecord(start);
-  for (int i = 0; i < niterations; ++i)
-    naive_kernel<<<gridDim, blockDim>>>(A.device_view, u.device_view,
-                                        grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-
-  float ms;
-  cudaEventElapsedTime(&ms, start, stop);
-
-  unsigned long long nflops = nelts*ndofs_1d*ndofs_1d*ndofs_1d*ndofs_1d;
-  unsigned long long nbytes = sizeof(FP_T)*(
-    nelts*ndofs_1d*ndofs_1d*ndofs_1d + ndofs_1d*ndofs_1d
-  );
-  Benchmark b(niterations, ms, nflops, nbytes);
-  fprintf(stderr, "===== Naive kernel =====\n");
-  fprintf(stderr, "Runtime: %.4f ms\n", ms / niterations);
-  fprintf(stderr, "GFLOP/s: %.4f\n", b.gflops());
-  fprintf(stderr, "Gbyte/s: %.4f\n", b.gb_per_sec());
-  fprintf(stderr, "========================\n");
-
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
-
-  return cudaGetLastError();
+  return b.run(gridDim, blockDim, smem_bytes);
 }
 
-template <class FP_T>
-cudaError_t shared_memory_driver(RankedTensor<FP_T> A, RankedTensor<FP_T> u,
-                                 RankedTensor<FP_T> grad, const int nelts,
-                                 const int ndofs_1d, const int dim,
-                                 int niterations) {
-  dim3 gridDim(nelts);
-  dim3 blockDim(ndofs_1d, ndofs_1d);
-
-  int smem_bytes = sizeof(FP_T) * 2 * ndofs_1d * ndofs_1d;
-
-  shared_memory_kernel<<<gridDim, blockDim, smem_bytes>>>(
-      A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
-  cudaEventRecord(start);
-  for (int i = 0; i < niterations; ++i)
-    shared_memory_kernel<<<gridDim, blockDim, smem_bytes>>>(
-        A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-
-  float ms;
-  cudaEventElapsedTime(&ms, start, stop);
-
-  unsigned long long nflops = nelts*ndofs_1d*ndofs_1d*ndofs_1d*ndofs_1d;
-  unsigned long long nbytes = sizeof(FP_T)*(
-    nelts*ndofs_1d*ndofs_1d*ndofs_1d + ndofs_1d*ndofs_1d
-  );
-  Benchmark b(niterations, ms, nflops, nbytes);
-  fprintf(stderr, "===== Shared memory kernel =====\n");
-  fprintf(stderr, "Runtime: %.4f ms\n", ms / niterations);
-  fprintf(stderr, "GFLOP/s: %.4f\n", b.gflops());
-  fprintf(stderr, "Gbyte/s: %.4f\n", b.gb_per_sec());
-  fprintf(stderr, "================================\n");
-
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
-
-  return cudaGetLastError();
-}
-
-template <class FP_T>
-cudaError_t shared_memory_no_bank_conflicts_driver(
-    RankedTensor<FP_T> A, RankedTensor<FP_T> u, RankedTensor<FP_T> grad,
-    const int nelts, const int ndofs_1d, const int dim, int niterations) {
-  dim3 gridDim(nelts);
-  dim3 blockDim(ndofs_1d, ndofs_1d);
-
-  int smem_bytes =
-      sizeof(FP_T) * (ndofs_1d * ndofs_1d + ndofs_1d * (ndofs_1d + 1));
-
-  shared_no_bank_conflicts<<<gridDim, blockDim, smem_bytes>>>(
-      A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
-  cudaEventRecord(start);
-  for (int i = 0; i < niterations; ++i)
-    shared_no_bank_conflicts<<<gridDim, blockDim, smem_bytes>>>(
-        A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-
-  float ms;
-  cudaEventElapsedTime(&ms, start, stop);
-
-  unsigned long long nflops = nelts*ndofs_1d*ndofs_1d*ndofs_1d*ndofs_1d;
-  unsigned long long nbytes = sizeof(FP_T)*(
-    nelts*ndofs_1d*ndofs_1d*ndofs_1d + ndofs_1d*ndofs_1d
-  );
-  Benchmark b(niterations, ms, nflops, nbytes);
-
-  fprintf(stderr, "===== Shared memory kernel, no conflicts =====\n");
-  fprintf(stderr, "Runtime: %.4f ms\n", ms / niterations);
-  fprintf(stderr, "GFLOP/s: %.4f\n", b.gflops());
-  fprintf(stderr, "Gbyte/s: %.4f\n", b.gb_per_sec());
-  fprintf(stderr, "==============================================\n");
-
-
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
-
-  return cudaGetLastError();
-}
-
-template <class FP_T>
-cudaError_t register_tiled_k_driver(RankedTensor<FP_T> A, RankedTensor<FP_T> u,
-                             RankedTensor<FP_T> grad, const int nelts,
-                             const int ndofs_1d, const int dim,
-                             int niterations) {
-  dim3 gridDim(nelts);
-  dim3 blockDim(ndofs_1d, ndofs_1d);
-
-  int smem_bytes =
-      sizeof(FP_T) * ndofs_1d * ndofs_1d + ndofs_1d * (ndofs_1d + 1);
-
-  register_tiled_k<<<gridDim, blockDim, smem_bytes>>>(
-      A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
-  cudaEventRecord(start);
-  for (int i = 0; i < niterations; ++i)
-    register_tiled_k<<<gridDim, blockDim, smem_bytes>>>(
-        A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-
-  float ms;
-  cudaEventElapsedTime(&ms, start, stop);
-
-  unsigned long long nflops = nelts*ndofs_1d*ndofs_1d*ndofs_1d*ndofs_1d;
-  unsigned long long nbytes = sizeof(FP_T)*(
-    nelts*ndofs_1d*ndofs_1d*ndofs_1d + ndofs_1d*ndofs_1d
-  );
-  Benchmark b(niterations, ms, nflops, nbytes);
-  fprintf(stderr, "===== Register tiled kernel =====\n");
-  fprintf(stderr, "Runtime: %.4f ms\n", ms / niterations);
-  fprintf(stderr, "GFLOP/s: %.4f\n", b.gflops());
-  fprintf(stderr, "Gbyte/s: %.4f\n", b.gb_per_sec());
-  fprintf(stderr, "=================================\n");
-
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
-
-  return cudaGetLastError();
-}
-
-template <class FP_T>
-cudaError_t
-register_tiled_op_constant(RankedTensor<FP_T> A, RankedTensor<FP_T> u,
-                           RankedTensor<FP_T> grad, const int nelts,
-                           const int ndofs_1d, const int dim, int niterations) {
-  dim3 gridDim(nelts);
-  dim3 blockDim(ndofs_1d, ndofs_1d);
-
-  int smem_bytes = sizeof(FP_T) * ndofs_1d * ndofs_1d;
-  if (cudaError_t e =
-          cudaMemcpyToSymbol(op_const<FP_T>, A.host_view, smem_bytes);
-      e != cudaSuccess)
-    fprintf(stderr, "cudaMemcpyToSymbolFailed: %s\n", cudaGetErrorString(e));
-
-  register_tiled_const_A<<<gridDim, blockDim, smem_bytes>>>(
-      u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
-  cudaEventRecord(start);
-  for (int i = 0; i < niterations; ++i)
-    register_tiled_const_A<<<gridDim, blockDim, smem_bytes>>>(
-        u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-
-  float ms;
-  cudaEventElapsedTime(&ms, start, stop);
-
-  unsigned long long nflops = nelts*ndofs_1d*ndofs_1d*ndofs_1d*ndofs_1d;
-  unsigned long long nbytes = sizeof(FP_T)*(
-    nelts*ndofs_1d*ndofs_1d*ndofs_1d + ndofs_1d*ndofs_1d
-  );
-  Benchmark b(niterations, ms, nflops, nbytes);
-  fprintf(stderr, "===== Register tiled kernel, const A =====\n");
-  fprintf(stderr, "Runtime: %.4f ms\n", ms / niterations);
-  fprintf(stderr, "GFLOP/s: %.4f\n", b.gflops());
-  fprintf(stderr, "Gbyte/s: %.4f\n", b.gb_per_sec());
-  fprintf(stderr, "==========================================\n");
-
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
-
-  return cudaGetLastError();
-}
-
-template <class FP_T>
-cudaError_t register_tiled_explicit_unroll_driver(
-    RankedTensor<FP_T> A, RankedTensor<FP_T> u, RankedTensor<FP_T> grad,
-    const int nelts, const int ndofs_1d, const int dim, int niterations) {
-  // NOTE: only works for ndofs_1d = 8
-  dim3 gridDim(nelts);
-  dim3 blockDim(ndofs_1d, ndofs_1d);
-  int smem_bytes = sizeof(FP_T) * 2 * ndofs_1d * (ndofs_1d + 4); 
-
-  register_tiled_explicit_unroll<<<gridDim, blockDim, smem_bytes>>>(
-      A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
-  cudaEventRecord(start);
-  for (int i = 0; i < niterations; ++i)
-    register_tiled_explicit_unroll<<<gridDim, blockDim, smem_bytes>>>(
-        A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim);
-
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-
-  float ms;
-  cudaEventElapsedTime(&ms, start, stop);
-
-  unsigned long long nflops = nelts*ndofs_1d*ndofs_1d*ndofs_1d*ndofs_1d;
-  unsigned long long nbytes = sizeof(FP_T)*(
-    nelts*ndofs_1d*ndofs_1d*ndofs_1d + ndofs_1d*ndofs_1d
-  );
-  Benchmark b(niterations, ms, nflops, nbytes);
-  fprintf(stderr, "===== Register tiled explicit unroll =====\n");
-  fprintf(stderr, "Runtime: %.4f ms\n", ms / niterations);
-  fprintf(stderr, "GFLOP/s: %.4f\n", b.gflops());
-  fprintf(stderr, "Total GB: %.4f\n", (double)b.nbytes * 1e-9);
-  fprintf(stderr, "Gbyte/s: %.4f\n", b.gb_per_sec());
-  fprintf(stderr, "==========================================\n");
-
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
-
-  return cudaGetLastError();
-}
-
-template <class FP_T>
-cudaError_t persistent_register_tiled_explicit_unroll_driver(
-    RankedTensor<FP_T> A, RankedTensor<FP_T> u, RankedTensor<FP_T> grad,
-    const int nelts, const int ndofs_1d, const int dim, int niterations) {
-  // NOTE: 3090 has 82 SMs
-  dim3 gridDim(82);
-  dim3 blockDim(ndofs_1d, ndofs_1d);
-  int smem_bytes = sizeof(FP_T) * 3 * ndofs_1d * (ndofs_1d + 4); 
-
-  // FIXME: handle "the tail" eventually 
-  int nelts_per_block = nelts / 82;
-
-  persistent_register_tiled_explicit_unroll<<<gridDim, blockDim, smem_bytes>>>(
-      A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim,
-      nelts_per_block);
-
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
-  cudaEventRecord(start);
-  for (int i = 0; i < niterations; ++i)
-    persistent_register_tiled_explicit_unroll<<<gridDim, blockDim, smem_bytes>>>(
-        A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim,
-        nelts_per_block);
-
-  cudaEventRecord(stop);
-  cudaEventSynchronize(stop);
-
-  float ms;
-  cudaEventElapsedTime(&ms, start, stop);
-
-  unsigned long long nflops = nelts*ndofs_1d*ndofs_1d*ndofs_1d*ndofs_1d;
-  unsigned long long nbytes = sizeof(FP_T)*(
-    nelts*ndofs_1d*ndofs_1d*ndofs_1d + ndofs_1d*ndofs_1d
-  );
-  Benchmark b(niterations, ms, nflops, nbytes);
-  fprintf(stderr, "===== Persistent kernel =====\n");
-  fprintf(stderr, "Runtime: %.4f ms\n", ms / niterations);
-  fprintf(stderr, "GFLOP/s: %.4f\n", b.gflops());
-  fprintf(stderr, "Total GB: %.4f\n", (double)b.nbytes * 1e-9);
-  fprintf(stderr, "Gbyte/s: %.4f\n", b.gb_per_sec());
-  fprintf(stderr, "=============================\n");
-
-  cudaEventDestroy(start);
-  cudaEventDestroy(stop);
-
-  return cudaGetLastError();
-}
+// FIXME: remove once implemented in main file
+// template <class FP_T>
+// cudaError_t persistent_register_tiled_explicit_unroll_driver(
+//     RankedTensor<FP_T> A, RankedTensor<FP_T> u, RankedTensor<FP_T> grad,
+//     const int nelts, const int ndofs_1d, const int dim, int niterations) {
+//   // NOTE: 3090 has 82 SMs
+//   dim3 gridDim(82);
+//   dim3 blockDim(ndofs_1d, ndofs_1d);
+//   int smem_bytes = sizeof(FP_T) * 3 * ndofs_1d * (ndofs_1d + 4); 
+//
+//   // FIXME: handle "the tail" eventually 
+//   int nelts_per_block = nelts / 82;
+//
+//   persistent_register_tiled_explicit_unroll<<<gridDim, blockDim, smem_bytes>>>(
+//       A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim,
+//       nelts_per_block);
+//
+//   cudaEvent_t start, stop;
+//   cudaEventCreate(&start);
+//   cudaEventCreate(&stop);
+//
+//   cudaEventRecord(start);
+//   for (int i = 0; i < niterations; ++i)
+//     persistent_register_tiled_explicit_unroll<<<gridDim, blockDim, smem_bytes>>>(
+//         A.device_view, u.device_view, grad.device_view, nelts, ndofs_1d, dim,
+//         nelts_per_block);
+//
+//   cudaEventRecord(stop);
+//   cudaEventSynchronize(stop);
+//
+//   float ms;
+//   cudaEventElapsedTime(&ms, start, stop);
+//
+//   unsigned long long nflops = nelts*ndofs_1d*ndofs_1d*ndofs_1d*ndofs_1d;
+//   unsigned long long nbytes = sizeof(FP_T)*(
+//     nelts*ndofs_1d*ndofs_1d*ndofs_1d + ndofs_1d*ndofs_1d
+//   );
+//   Benchmark b(niterations, ms, nflops, nbytes);
+//   fprintf(stderr, "===== Persistent kernel =====\n");
+//   fprintf(stderr, "Runtime: %.4f ms\n", ms / niterations);
+//   fprintf(stderr, "GFLOP/s: %.4f\n", b.gflops());
+//   fprintf(stderr, "Total GB: %.4f\n", (double)b.nbytes * 1e-9);
+//   fprintf(stderr, "Gbyte/s: %.4f\n", b.gb_per_sec());
+//   fprintf(stderr, "=============================\n");
+//
+//   cudaEventDestroy(start);
+//   cudaEventDestroy(stop);
+//
+//   return cudaGetLastError();
+// }
 
 #endif
